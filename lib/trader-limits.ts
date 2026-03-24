@@ -13,11 +13,13 @@ export type TraderCapacitySnapshot = {
   currentUsers: number
 }
 
-export function normalizeTraderLimitInput(value: unknown): number | undefined {
+export function normalizeTraderLimitInput(value: unknown): number | null | undefined {
   if (value === undefined) return undefined
-  if (value === null || value === '') return 0
+  // Treat empty/zero as "no limit" to avoid blocking all new records.
+  if (value === null || value === '') return null
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 0) return undefined
+  if (parsed === 0) return null
   return parsed
 }
 
@@ -59,8 +61,8 @@ export async function getTraderCapacitySnapshot(
 
   return {
     ...trader,
-    maxCompanies: trader.maxCompanies,
-    maxUsers: trader.maxUsers,
+    maxCompanies: trader.maxCompanies && trader.maxCompanies > 0 ? trader.maxCompanies : null,
+    maxUsers: trader.maxUsers && trader.maxUsers > 0 ? trader.maxUsers : null,
     currentCompanies,
     currentUsers
   }

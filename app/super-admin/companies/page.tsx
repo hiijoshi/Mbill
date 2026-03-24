@@ -43,7 +43,7 @@ export default function SuperAdminCompaniesPage() {
     setError(null)
     try {
       const [companiesRes, tradersRes] = await Promise.all([
-        fetch('/api/super-admin/companies'),
+        fetch('/api/super-admin/companies?lite=true'),
         fetch('/api/super-admin/traders')
       ])
       if (!companiesRes.ok || !tradersRes.ok) {

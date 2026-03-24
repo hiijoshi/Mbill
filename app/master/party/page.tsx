@@ -9,7 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import DashboardLayout from '@/app/components/DashboardLayout'
 import { Plus, Edit, Trash2, Users } from 'lucide-react'
-import { getCompanyIdFromSearch } from '@/lib/company-context'
+import { resolveCompanyId as resolveActiveCompanyId } from '@/lib/company-context'
 import { useRouter } from 'next/navigation'
 
 interface Party {
@@ -94,7 +94,7 @@ export default function PartyMasterPage() {
 
   useEffect(() => {
     ;(async () => {
-      const resolvedCompanyId = getCompanyIdFromSearch(window.location.search)
+      const resolvedCompanyId = await resolveActiveCompanyId(window.location.search)
       if (!resolvedCompanyId) {
         setLoading(false)
         setMessage({ type: 'error', text: 'Company not selected. Please select company once.' })

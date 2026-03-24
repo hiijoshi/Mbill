@@ -61,14 +61,7 @@ export default function ProductMasterPage() {
 
   const gstRates = ['0', '5', '12', '18', '28']
 
-  const fetchUnits = useCallback(async () => {
-    const activeCompanyId = companyId || await resolveActiveCompanyId(window.location.search)
-    if (!activeCompanyId) {
-      setErrorMessage('Company not selected. Please select company once.')
-      setUnits([])
-      return
-    }
-
+  const fetchUnits = useCallback(async (activeCompanyId: string) => {
     try {
       const response = await fetch(`/api/units?companyId=${encodeURIComponent(activeCompanyId)}`)
 
@@ -95,17 +88,9 @@ export default function ProductMasterPage() {
       setErrorMessage('Unable to load units right now. Please refresh and try again.')
       setUnits([])
     }
-  }, [companyId])
+  }, [])
 
-  const fetchProducts = useCallback(async () => {
-    const activeCompanyId = companyId || await resolveActiveCompanyId(window.location.search)
-    if (!activeCompanyId) {
-      setErrorMessage('Company not selected. Please select company once.')
-      setProducts([])
-      setLoading(false)
-      return
-    }
-
+  const fetchProducts = useCallback(async (activeCompanyId: string) => {
     try {
       const response = await fetch(`/api/products?companyId=${encodeURIComponent(activeCompanyId)}`)
 
@@ -159,13 +144,28 @@ export default function ProductMasterPage() {
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  const ensureCompanyContext = useCallback(async () => {
+    const activeCompanyId = companyId || await resolveActiveCompanyId(window.location.search)
+    if (!activeCompanyId) {
+      setErrorMessage('Company not selected. Please select company once.')
+      setProducts([])
+      setUnits([])
+      setLoading(false)
+      return null
+    }
+    setCompanyId(activeCompanyId)
+    return activeCompanyId
   }, [companyId])
 
   useEffect(() => {
     ;(async () => {
-      await Promise.all([fetchProducts(), fetchUnits()])
+      const activeCompanyId = await ensureCompanyContext()
+      if (!activeCompanyId) return
+      await Promise.all([fetchProducts(activeCompanyId), fetchUnits(activeCompanyId)])
     })()
-  }, [fetchProducts, fetchUnits])
+  }, [ensureCompanyContext, fetchProducts, fetchUnits])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -176,7 +176,7 @@ export default function ProductMasterPage() {
     }
 
     try {
-      const activeCompanyId = companyId || await resolveActiveCompanyId(window.location.search)
+      const activeCompanyId = await ensureCompanyContext()
       if (!activeCompanyId) {
         alert('Company not selected. Please select company once.')
         return
@@ -224,7 +224,7 @@ export default function ProductMasterPage() {
 
         alert(editingProduct ? 'Product updated successfully!' : 'Product created successfully!')
         resetForm()
-        fetchProducts()
+        fetchProducts(activeCompanyId)
       } else {
         const error = await response.json().catch(() => ({}))
         alert(error?.error || 'Operation failed')
@@ -256,7 +256,7 @@ export default function ProductMasterPage() {
     }
 
     try {
-      const fallbackCompanyId = companyId || await resolveActiveCompanyId(window.location.search)
+      const fallbackCompanyId = await ensureCompanyContext()
       const deleteUrl = fallbackCompanyId
         ? `/api/products?id=${id}&companyId=${encodeURIComponent(fallbackCompanyId)}`
         : `/api/products?id=${id}`
@@ -271,7 +271,9 @@ export default function ProductMasterPage() {
         }
 
         alert('Product deleted successfully!')
-        fetchProducts()
+        if (fallbackCompanyId) {
+          fetchProducts(fallbackCompanyId)
+        }
       } else {
         const error = await response.json().catch(() => ({}))
         alert(error?.error || 'Delete failed')
@@ -286,7 +288,7 @@ export default function ProductMasterPage() {
     if (!confirm('Delete all products for this company?')) return
 
     try {
-      const fallbackCompanyId = companyId || await resolveActiveCompanyId(window.location.search)
+      const fallbackCompanyId = await ensureCompanyContext()
       const deleteAllUrl = fallbackCompanyId
         ? `/api/products?all=true&companyId=${encodeURIComponent(fallbackCompanyId)}`
         : '/api/products?all=true'
@@ -300,7 +302,9 @@ export default function ProductMasterPage() {
           clearDefaultPurchaseProductId(companyId)
         }
         setDefaultPurchaseProductIdState('')
-        fetchProducts()
+        if (fallbackCompanyId) {
+          fetchProducts(fallbackCompanyId)
+        }
       }
     } catch (error) {
       console.error('Error deleting all products:', error)

@@ -32,9 +32,22 @@ async function settledCount(query: Promise<number>): Promise<PromiseSettledResul
   }
 }
 
+const STATS_CACHE_TTL_MS = 10_000
+let statsCache:
+  | {
+      payload: Record<string, unknown>
+      expiresAt: number
+    }
+  | null = null
+
 export async function GET(request: NextRequest) {
   const authResult = requireRoles(request, ['super_admin'])
   if (!authResult.ok) return authResult.response
+
+  const now = Date.now()
+  if (statsCache && now < statsCache.expiresAt) {
+    return NextResponse.json(statsCache.payload)
+  }
 
   // Run count queries in a controlled sequence to avoid saturating small
   // Prisma pools during parallel super-admin dashboard loads.
@@ -67,6 +80,11 @@ export async function GET(request: NextRequest) {
     totalSalesBills: safeCount(results[7]),
     partial: results.some((result) => result.status === 'rejected'),
     lastUpdated: new Date().toISOString()
+  }
+
+  statsCache = {
+    payload: stats,
+    expiresAt: now + STATS_CACHE_TTL_MS
   }
 
   return NextResponse.json(stats)

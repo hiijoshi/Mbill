@@ -48,6 +48,7 @@ export async function GET(request: NextRequest) {
     const searchParams = new URL(request.url).searchParams
     const includeDeleted = parseBooleanParam(searchParams.get('includeDeleted'))
     const traderIdFilter = normalizeTraderId(searchParams.get('traderId'))
+    const lite = parseBooleanParam(searchParams.get('lite'))
 
     const companies = await prisma.company.findMany({
       where: {
@@ -71,17 +72,23 @@ export async function GET(request: NextRequest) {
             name: true
           }
         },
-        _count: {
-          select: {
-            users: includeDeleted ? true : { where: { deletedAt: null } },
-            parties: true,
-            farmers: true,
-            suppliers: true,
-            products: true,
-            purchaseBills: true,
-            salesBills: true
-          }
-        }
+        _count: lite
+          ? {
+              select: {
+                users: includeDeleted ? true : { where: { deletedAt: null } }
+              }
+            }
+          : {
+              select: {
+                users: includeDeleted ? true : { where: { deletedAt: null } },
+                parties: true,
+                farmers: true,
+                suppliers: true,
+                products: true,
+                purchaseBills: true,
+                salesBills: true
+              }
+            }
       },
       orderBy: {
         createdAt: 'desc'
@@ -102,12 +109,16 @@ export async function GET(request: NextRequest) {
       trader: company.trader,
       _count: {
         users: company._count.users,
-        parties: company._count.parties,
-        farmers: company._count.farmers,
-        suppliers: company._count.suppliers,
-        products: company._count.products,
-        purchaseBills: company._count.purchaseBills,
-        salesBills: company._count.salesBills
+        ...(lite
+          ? {}
+          : {
+              parties: (company._count as { parties?: number }).parties || 0,
+              farmers: (company._count as { farmers?: number }).farmers || 0,
+              suppliers: (company._count as { suppliers?: number }).suppliers || 0,
+              products: (company._count as { products?: number }).products || 0,
+              purchaseBills: (company._count as { purchaseBills?: number }).purchaseBills || 0,
+              salesBills: (company._count as { salesBills?: number }).salesBills || 0
+            })
       }
     }))
 

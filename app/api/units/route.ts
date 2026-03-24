@@ -84,8 +84,8 @@ function resolveCompanyId(
   return {
     ok: false,
     response: NextResponse.json(
-      { error: 'No company assigned to this user' },
-      { status: 403, headers: setCORSHeaders() }
+      { error: 'Company ID is required' },
+      { status: 400, headers: setCORSHeaders() }
     )
   }
 }

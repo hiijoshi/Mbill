@@ -141,10 +141,10 @@ export default function SuperAdminCrudPage() {
         responses.push(await fetchJson('/api/super-admin/traders'))
       } else if (section === 'companies') {
         responses.push(await fetchJson('/api/super-admin/traders'))
-        responses.push(await fetchJson('/api/super-admin/companies'))
+        responses.push(await fetchJson('/api/super-admin/companies?lite=true'))
       } else {
         responses.push(await fetchJson('/api/super-admin/traders'))
-        responses.push(await fetchJson('/api/super-admin/companies'))
+        responses.push(await fetchJson('/api/super-admin/companies?lite=true'))
         responses.push(await fetchJson('/api/super-admin/users'))
       }
 

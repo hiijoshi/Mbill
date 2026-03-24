@@ -78,7 +78,7 @@ function resolveCompanyId(
 
   return {
     ok: false,
-    response: NextResponse.json({ error: 'No company assigned to this user' }, { status: 403 })
+    response: NextResponse.json({ error: 'Company ID is required' }, { status: 400 })
   }
 }
 
