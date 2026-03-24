@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,6 +10,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge'
 import DashboardLayout from '@/app/components/DashboardLayout'
 import { Plus, Edit, Trash2, Ruler } from 'lucide-react'
+import { resolveCompanyId as resolveActiveCompanyId } from '@/lib/company-context'
+import { authHeadersScoped } from '@/lib/csrf'
 
 interface Unit {
   id: string
@@ -22,6 +25,7 @@ interface Unit {
 }
 
 export default function UnitMasterPage() {
+  const router = useRouter()
   const [companyId, setCompanyId] = useState('')
   const [units, setUnits] = useState<Unit[]>([])
   const [loading, setLoading] = useState(true)
@@ -29,17 +33,31 @@ export default function UnitMasterPage() {
   const [isFormOpen, setIsFormOpen] = useState(false)
   const [editingUnit, setEditingUnit] = useState<Unit | null>(null)
 
-  // Form state
   const [formData, setFormData] = useState({
     name: '',
     symbol: '',
     kgEquivalent: '1',
     description: ''
   })
-  const fetchUnits = useCallback(async () => {
+
+  const ensureCompanyContext = useCallback(async () => {
+    const activeCompanyId = companyId || (await resolveActiveCompanyId(window.location.search))
+    if (!activeCompanyId) {
+      setLoading(false)
+      router.replace('/company/select')
+      return null
+    }
+    setCompanyId(activeCompanyId)
+    return activeCompanyId
+  }, [companyId, router])
+
+  const fetchUnits = useCallback(async (activeCompanyId: string) => {
     try {
-      const response = await fetch('/api/units')
-      
+      const response = await fetch(
+        `/api/units?companyId=${encodeURIComponent(activeCompanyId)}`,
+        { cache: 'no-store' }
+      )
+
       if (response.ok) {
         const data = await response.json().catch(() => ({}))
         const rows = Array.isArray(data?.units) ? data.units : Array.isArray(data) ? data : []
@@ -48,11 +66,19 @@ export default function UnitMasterPage() {
         if (resolvedCompanyId) {
           setCompanyId((prev) => prev || resolvedCompanyId)
         }
+        setErrorMessage('')
       } else {
+        const payload = await response.json().catch(() => ({}))
+        setErrorMessage(
+          typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : 'Unable to load units. Please refresh or re-select company.'
+        )
         setUnits([])
       }
     } catch (error) {
       console.error('Error fetching units:', error)
+      setErrorMessage('Unable to load units. Please refresh and try again.')
       setUnits([])
     } finally {
       setLoading(false)
@@ -60,12 +86,16 @@ export default function UnitMasterPage() {
   }, [])
 
   useEffect(() => {
-    void fetchUnits()
-  }, [fetchUnits])
+    ;(async () => {
+      const activeCompanyId = await ensureCompanyContext()
+      if (!activeCompanyId) return
+      await fetchUnits(activeCompanyId)
+    })()
+  }, [ensureCompanyContext, fetchUnits])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     if (!formData.name.trim() || !formData.symbol.trim()) {
       alert('Unit name and symbol are required')
       return
@@ -76,31 +106,34 @@ export default function UnitMasterPage() {
       return
     }
 
+    const activeCompanyId = await ensureCompanyContext()
+    if (!activeCompanyId) {
+      router.replace('/company/select')
+      return
+    }
+
     try {
-      const url = editingUnit 
-        ? `/api/units?id=${editingUnit.id}`
-        : `/api/units`
-      
+      const base = `/api/units?companyId=${encodeURIComponent(activeCompanyId)}`
+      const url = editingUnit ? `${base}&id=${encodeURIComponent(editingUnit.id)}` : base
+
       const method = editingUnit ? 'PUT' : 'POST'
-      
+
       const response = await fetch(url, {
         method,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
+        headers: authHeadersScoped('app'),
+        body: JSON.stringify(formData)
       })
 
       if (response.ok) {
         alert(editingUnit ? 'Unit updated successfully!' : 'Unit created successfully!')
         resetForm()
-        fetchUnits()
+        await fetchUnits(activeCompanyId)
       } else {
         const errorText = await response.text()
         console.error('Error Response:', errorText)
-        let error
+        let error: { error?: string }
         try {
-          error = JSON.parse(errorText)
+          error = JSON.parse(errorText) as { error?: string }
         } catch {
           error = { error: errorText }
         }
@@ -135,17 +168,27 @@ export default function UnitMasterPage() {
     }
     if (!confirm('Are you sure you want to delete this unit? This may affect existing products.')) return
 
+    const activeCompanyId = await ensureCompanyContext()
+    if (!activeCompanyId) {
+      router.replace('/company/select')
+      return
+    }
+
     try {
-      const response = await fetch(`/api/units?id=${id}`, {
-        method: 'DELETE',
-      })
+      const response = await fetch(
+        `/api/units?id=${encodeURIComponent(id)}&companyId=${encodeURIComponent(activeCompanyId)}`,
+        {
+          method: 'DELETE',
+          headers: authHeadersScoped('app')
+        }
+      )
 
       if (response.ok) {
         alert('Unit deleted successfully!')
-        fetchUnits()
+        await fetchUnits(activeCompanyId)
       } else {
-        const error = await response.json()
-        alert(error.error || 'Delete failed')
+        const error = await response.json().catch(() => ({}))
+        alert((error as { error?: string }).error || 'Delete failed')
       }
     } catch (error) {
       console.error('Error:', error)
@@ -155,16 +198,35 @@ export default function UnitMasterPage() {
 
   const handleDeleteAll = async () => {
     if (!confirm('Delete all user units for this company? Universal units (kg, qt) will be kept.')) return
-    const response = await fetch(`/api/units?all=true`, { method: 'DELETE' })
+
+    const activeCompanyId = await ensureCompanyContext()
+    if (!activeCompanyId) {
+      router.replace('/company/select')
+      return
+    }
+
+    const response = await fetch(
+      `/api/units?all=true&companyId=${encodeURIComponent(activeCompanyId)}`,
+      { method: 'DELETE', headers: authHeadersScoped('app') }
+    )
     const result = await response.json().catch(() => ({}))
-    alert(result.message || result.error || 'Operation completed')
-    if (response.ok) fetchUnits()
+    alert((result as { message?: string; error?: string }).message || (result as { error?: string }).error || 'Operation completed')
+    if (response.ok) {
+      await fetchUnits(activeCompanyId)
+    }
   }
 
   const handleExportCsv = () => {
     if (units.length === 0) return alert('No unit data to export')
     const headers = ['Name', 'Symbol', 'KGEquivalent', 'Universal', 'Description', 'CreatedAt']
-    const rows = units.map((u) => [u.name, u.symbol, u.kgEquivalent, u.isUniversal ? 'Yes' : 'No', u.description || '', u.createdAt])
+    const rows = units.map((u) => [
+      u.name,
+      u.symbol,
+      u.kgEquivalent,
+      u.isUniversal ? 'Yes' : 'No',
+      u.description || '',
+      u.createdAt
+    ])
     const csv = [headers.join(','), ...rows.map((r) => r.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(','))].join('\n')
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
     const link = document.createElement('a')
@@ -183,7 +245,7 @@ export default function UnitMasterPage() {
 
   if (loading) {
     return (
-      <DashboardLayout companyId="">
+      <DashboardLayout companyId={companyId}>
         <div className="flex justify-center items-center h-screen">Loading...</div>
       </DashboardLayout>
     )
@@ -193,6 +255,11 @@ export default function UnitMasterPage() {
     <DashboardLayout companyId={companyId}>
       <div className="p-6">
         <div className="max-w-6xl mx-auto">
+          <div className="mb-4 rounded border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+            <strong>Default units:</strong> Kilogram (<Badge variant="outline" className="mx-1">kg</Badge>) and Quintal (
+            <Badge variant="outline" className="mx-1">qt</Badge>) are created automatically when you open this page.
+            Add custom units (bag, crate, etc.) below.
+          </div>
           {errorMessage && (
             <div className="mb-4 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
               {errorMessage}
@@ -204,8 +271,12 @@ export default function UnitMasterPage() {
               <h1 className="text-3xl font-bold">Unit Master</h1>
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" onClick={handleExportCsv}>Export CSV</Button>
-              <Button variant="destructive" onClick={handleDeleteAll}>Delete All</Button>
+              <Button variant="outline" onClick={handleExportCsv}>
+                Export CSV
+              </Button>
+              <Button variant="destructive" onClick={handleDeleteAll}>
+                Delete All
+              </Button>
               <Button onClick={() => setIsFormOpen(true)} className="flex items-center gap-2">
                 <Plus className="h-4 w-4" />
                 Add Unit
@@ -213,7 +284,6 @@ export default function UnitMasterPage() {
             </div>
           </div>
 
-          {/* Form */}
           {isFormOpen && (
             <Card className="mb-6">
               <CardHeader>
@@ -271,16 +341,13 @@ export default function UnitMasterPage() {
                     <Button type="button" variant="outline" onClick={resetForm}>
                       Cancel
                     </Button>
-                    <Button type="submit">
-                      {editingUnit ? 'Update' : 'Save'}
-                    </Button>
+                    <Button type="submit">{editingUnit ? 'Update' : 'Save'}</Button>
                   </div>
                 </form>
               </CardContent>
             </Card>
           )}
 
-          {/* Table */}
           <Card>
             <CardHeader>
               <CardTitle>Unit List</CardTitle>
@@ -288,7 +355,7 @@ export default function UnitMasterPage() {
             <CardContent>
               {units.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  No units found. Add your first unit to get started.
+                  No units loaded. If you expect kg/qt here, check company access or refresh the page.
                 </div>
               ) : (
                 <Table>
@@ -317,9 +384,7 @@ export default function UnitMasterPage() {
                           </Badge>
                         </TableCell>
                         <TableCell>{unit.description || '-'}</TableCell>
-                        <TableCell>
-                          {new Date(unit.createdAt).toLocaleDateString()}
-                        </TableCell>
+                        <TableCell>{new Date(unit.createdAt).toLocaleDateString()}</TableCell>
                         <TableCell>
                           <div className="flex space-x-2">
                             <Button

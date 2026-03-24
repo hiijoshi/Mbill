@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { UNIVERSAL_UNITS, toNumber } from '@/lib/unit-conversion'
-import { ensureCompanyAccess, forbidden, hasCompanyAccess, normalizeId, requireAuthContext, requireRoles } from '@/lib/api-security'
+import {
+  ensureCompanyAccess,
+  forbidden,
+  getRequestAuthContext,
+  hasCompanyAccess,
+  normalizeId,
+  requireAuthContext
+} from '@/lib/api-security'
 
 function setCORSHeaders() {
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000']
@@ -21,6 +28,11 @@ function clean(value: unknown): string | null {
 }
 
 function readCompanyIdFromAuth(request: NextRequest): string | null {
+  const fromCtx = getRequestAuthContext(request)?.companyId
+  if (typeof fromCtx === 'string' && fromCtx.trim()) {
+    return fromCtx.trim()
+  }
+
   const req = request as NextRequest & {
     user?: {
       companyId?: string | null
@@ -95,7 +107,7 @@ function isUniversalSymbol(symbol: string): boolean {
 }
 
 async function ensureWriteAccess(request: NextRequest, companyId: string) {
-  const authResult = requireRoles(request, ['super_admin', 'trader_admin', 'company_admin'])
+  const authResult = requireAuthContext(request)
   if (!authResult.ok) {
     return authResult.response
   }
