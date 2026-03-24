@@ -121,35 +121,32 @@ export default function SuperAdminCrudPage() {
   const [users, setUsers] = useState<UserRow[]>([])
   const modalScrollRef = useRef<HTMLDivElement | null>(null)
 
+  const fetchJson = useCallback(async (url: string) => {
+    try {
+      const response = await fetch(url)
+      const payload = await response.json().catch(() => ({} as Record<string, unknown>))
+      return { ok: response.ok, payload }
+    } catch {
+      return { ok: false, payload: { error: 'Request failed' } as Record<string, unknown> }
+    }
+  }, [])
+
   const fetchData = useCallback(async (section: CrudSection = activeTab) => {
     setError(null)
     setRefreshing(true)
     try {
-      const requests: Promise<Response>[] = [fetch('/api/super-admin/stats')]
+      const responses: Array<{ ok: boolean; payload: unknown }> = []
+      responses.push(await fetchJson('/api/super-admin/stats'))
       if (section === 'traders') {
-        requests.push(fetch('/api/super-admin/traders'))
+        responses.push(await fetchJson('/api/super-admin/traders'))
       } else if (section === 'companies') {
-        requests.push(fetch('/api/super-admin/traders'), fetch('/api/super-admin/companies'))
+        responses.push(await fetchJson('/api/super-admin/traders'))
+        responses.push(await fetchJson('/api/super-admin/companies'))
       } else {
-        requests.push(fetch('/api/super-admin/traders'), fetch('/api/super-admin/companies'), fetch('/api/super-admin/users'))
+        responses.push(await fetchJson('/api/super-admin/traders'))
+        responses.push(await fetchJson('/api/super-admin/companies'))
+        responses.push(await fetchJson('/api/super-admin/users'))
       }
-
-      const settledResponses = await Promise.allSettled(requests)
-      const responses = await Promise.all(
-        settledResponses.map(async (result) => {
-          if (result.status !== 'fulfilled') {
-            return {
-              ok: false,
-              payload: { error: 'Request failed' } as Record<string, unknown>
-            }
-          }
-
-          return {
-            ok: result.value.ok,
-            payload: await result.value.json().catch(() => ({} as Record<string, unknown>))
-          }
-        })
-      )
 
       const [statsResult, ...sectionResults] = responses
       const statsPayload = statsResult?.payload || {}
@@ -214,7 +211,7 @@ export default function SuperAdminCrudPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [activeTab, companies.length, traders.length, users.length])
+  }, [activeTab, companies.length, fetchJson, traders.length, users.length])
 
   useEffect(() => {
     setLoading(true)

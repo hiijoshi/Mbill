@@ -50,7 +50,22 @@ function readCompanyIdFromAuth(request: NextRequest): string | null {
   return null
 }
 
-function resolveCompanyId(request: NextRequest): { ok: true; companyId: string } | { ok: false; response: NextResponse } {
+function normalizeCompanyId(raw: string | null): string | null {
+  if (!raw) return null
+  const value = raw.trim()
+  if (!value || value === 'null' || value === 'undefined') return null
+  return value
+}
+
+function resolveCompanyId(
+  request: NextRequest,
+  requestedCompanyId?: string | null
+): { ok: true; companyId: string } | { ok: false; response: NextResponse } {
+  const fromQuery = normalizeCompanyId(requestedCompanyId ?? null)
+  if (fromQuery) {
+    return { ok: true, companyId: fromQuery }
+  }
+
   const fromAuth = readCompanyIdFromAuth(request)
   if (fromAuth) {
     return { ok: true, companyId: fromAuth }
@@ -112,7 +127,7 @@ const putSchema = z
 export async function GET(request: NextRequest) {
   try {
     const searchParams = new URL(request.url).searchParams
-    const companyScope = resolveCompanyId(request)
+    const companyScope = resolveCompanyId(request, searchParams.get('companyId'))
     if (!companyScope.ok) return companyScope.response
     const companyId = companyScope.companyId
 
@@ -222,7 +237,8 @@ export async function POST(request: NextRequest) {
     const parsed = await parseJsonWithSchema(request, postSchema)
     if (!parsed.ok) return parsed.response
 
-    const companyScope = resolveCompanyId(request)
+    const searchParams = new URL(request.url).searchParams
+    const companyScope = resolveCompanyId(request, searchParams.get('companyId'))
     if (!companyScope.ok) return companyScope.response
     const companyId = companyScope.companyId
 
@@ -300,7 +316,7 @@ export async function PUT(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
-    const companyScope = resolveCompanyId(request)
+    const companyScope = resolveCompanyId(request, searchParams.get('companyId'))
     if (!companyScope.ok) return companyScope.response
     const companyId = companyScope.companyId
 
@@ -382,7 +398,7 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const id = searchParams.get('id')
     const all = searchParams.get('all') === 'true'
-    const companyScope = resolveCompanyId(request)
+    const companyScope = resolveCompanyId(request, searchParams.get('companyId'))
     if (!companyScope.ok) return companyScope.response
     const companyId = companyScope.companyId
 

@@ -23,25 +23,38 @@ const safeCount = (result: PromiseSettledResult<number>): number => {
   return 0
 }
 
+async function settledCount(query: Promise<number>): Promise<PromiseSettledResult<number>> {
+  try {
+    const value = await query
+    return { status: 'fulfilled', value }
+  } catch (reason) {
+    return { status: 'rejected', reason }
+  }
+}
+
 export async function GET(request: NextRequest) {
   const authResult = requireRoles(request, ['super_admin'])
   if (!authResult.ok) return authResult.response
 
-  const results = await Promise.allSettled([
-    prisma.trader.count({ where: { deletedAt: null } }),
-    prisma.trader.count({ where: { deletedAt: null, locked: true } }),
-    prisma.company.count({ where: { deletedAt: null } }),
-    prisma.company.count({ where: { deletedAt: null, locked: true } }),
-    prisma.user.count({ where: nonSuperAdminUserWhere }),
-    prisma.user.count({
-      where: {
-        ...nonSuperAdminUserWhere,
-        locked: true
-      }
-    }),
-    prisma.purchaseBill.count(),
-    prisma.salesBill.count()
-  ])
+  // Run count queries in a controlled sequence to avoid saturating small
+  // Prisma pools during parallel super-admin dashboard loads.
+  const results = [
+    await settledCount(prisma.trader.count({ where: { deletedAt: null } })),
+    await settledCount(prisma.trader.count({ where: { deletedAt: null, locked: true } })),
+    await settledCount(prisma.company.count({ where: { deletedAt: null } })),
+    await settledCount(prisma.company.count({ where: { deletedAt: null, locked: true } })),
+    await settledCount(prisma.user.count({ where: nonSuperAdminUserWhere })),
+    await settledCount(
+      prisma.user.count({
+        where: {
+          ...nonSuperAdminUserWhere,
+          locked: true
+        }
+      })
+    ),
+    await settledCount(prisma.purchaseBill.count()),
+    await settledCount(prisma.salesBill.count())
+  ]
 
   const stats = {
     totalTraders: safeCount(results[0]),

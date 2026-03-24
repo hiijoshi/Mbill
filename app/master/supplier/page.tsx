@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import DashboardLayout from '@/app/components/DashboardLayout'
 import { Plus, Edit, Trash2, Truck } from 'lucide-react'
-import { getCompanyIdFromSearch } from '@/lib/company-context'
+import { resolveCompanyId as resolveActiveCompanyId } from '@/lib/company-context'
 
 interface Supplier {
   id: string
@@ -96,7 +96,7 @@ export default function SupplierMasterPage() {
 
   useEffect(() => {
     ;(async () => {
-      const resolvedCompanyId = getCompanyIdFromSearch(window.location.search)
+      const resolvedCompanyId = await resolveActiveCompanyId(window.location.search)
       if (!resolvedCompanyId) {
         setLoading(false)
         setMessage({ type: 'error', text: 'Company not selected. Please select company once.' })

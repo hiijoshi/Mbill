@@ -278,9 +278,14 @@ async function resolveRequestAuthContext(
   request: NextRequest,
   namespace: 'app' | 'super_admin'
 ): Promise<MiddlewareAuthResolution | null> {
-  const supabaseAuth = await resolveSupabaseAuthContext(request)
-  if (supabaseAuth) {
-    return supabaseAuth
+  // Keep Super Admin and App sessions isolated across tabs.
+  // Supabase auth cookies are shared browser-wide; if we read them for
+  // super_admin namespace, app login can override super-admin context.
+  if (namespace === 'app') {
+    const supabaseAuth = await resolveSupabaseAuthContext(request)
+    if (supabaseAuth) {
+      return supabaseAuth
+    }
   }
 
   return resolveLegacyAuthContext(request, namespace)
