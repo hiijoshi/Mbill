@@ -38,6 +38,11 @@ interface Unit {
   description?: string
 }
 
+const FALLBACK_UNITS: Unit[] = [
+  { id: 'fallback-kg', name: 'Kilogram', symbol: 'kg', description: 'Fallback universal unit' },
+  { id: 'fallback-qt', name: 'Quintal', symbol: 'qt', description: 'Fallback universal unit' }
+]
+
 export default function ProductMasterPage() {
   const [companyId, setCompanyId] = useState('')
   const [products, setProducts] = useState<Product[]>([])
@@ -76,17 +81,22 @@ export default function ProductMasterPage() {
         if (resolvedCompanyId) {
           setCompanyId((prev) => prev || resolvedCompanyId)
         }
+        setErrorMessage('')
       } else {
         const payload = await response.json().catch(() => ({}))
-        if (typeof payload?.error === 'string' && payload.error.trim()) {
-          setErrorMessage(payload.error.trim())
-        }
-        setUnits([])
+        // Keep Product Master usable even if units API is temporarily unavailable.
+        setUnits(FALLBACK_UNITS)
+        const apiError =
+          typeof payload?.error === 'string' && payload.error.trim()
+            ? payload.error.trim()
+            : ''
+        setErrorMessage(apiError || 'Units service is temporarily unavailable. Using default units (KG/QT).')
       }
     } catch (error) {
       console.error('Error fetching units:', error)
-      setErrorMessage('Unable to load units right now. Please refresh and try again.')
-      setUnits([])
+      // Network/runtime fallback to avoid blocking Product Master.
+      setUnits(FALLBACK_UNITS)
+      setErrorMessage('Units service is temporarily unavailable. Using default units (KG/QT).')
     }
   }, [])
 
