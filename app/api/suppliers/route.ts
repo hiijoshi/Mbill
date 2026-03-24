@@ -36,9 +36,16 @@ function readCompanyIdFromAuth(request: NextRequest): string | null {
 function getCompanyIdFromAuthenticatedRequest(request: NextRequest): string {
   const companyId = readCompanyIdFromAuth(request)
   if (!companyId) {
-    throw new Error('No company assigned to this user')
+    throw new Error('Company scope is required for this request')
   }
   return companyId
+}
+
+function handleRouteError(error: unknown) {
+  if (error instanceof Error && error.message === 'Company scope is required for this request') {
+    return NextResponse.json({ error: error.message }, { status: 403 })
+  }
+  return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
 }
 
 const postSchema = z.object({
@@ -111,7 +118,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(suppliers)
   } catch (error) {
     console.error('Error fetching suppliers:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
 
@@ -171,7 +178,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, message: 'Supplier data stored successfully', supplier })
   } catch (error) {
     console.error('Error creating supplier:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
 
@@ -240,7 +247,7 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json(supplier)
   } catch (error) {
     console.error('Error updating supplier:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
 
@@ -291,6 +298,6 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ success: true, message: 'Supplier deleted successfully' })
   } catch (error) {
     console.error('Error deleting supplier:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }

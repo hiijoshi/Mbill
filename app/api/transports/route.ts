@@ -36,9 +36,16 @@ function readCompanyIdFromAuth(request: NextRequest): string | null {
 function getCompanyIdFromAuthenticatedRequest(request: NextRequest): string {
   const companyId = readCompanyIdFromAuth(request)
   if (!companyId) {
-    throw new Error('No company assigned to this user')
+    throw new Error('Company scope is required for this request')
   }
   return companyId
+}
+
+function handleRouteError(error: unknown) {
+  if (error instanceof Error && error.message === 'Company scope is required for this request') {
+    return NextResponse.json({ error: error.message }, { status: 403 })
+  }
+  return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
 }
 
 const postSchema = z.object({
@@ -109,7 +116,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(transports)
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
 
@@ -159,7 +166,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Transport data stored successfully', transport })
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
 
@@ -212,7 +219,7 @@ export async function PUT(request: NextRequest) {
     })
     return NextResponse.json({ success: true, message: 'Transport updated successfully', transport })
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
 
@@ -243,6 +250,6 @@ export async function DELETE(request: NextRequest) {
     await prisma.transport.delete({ where: { id } })
     return NextResponse.json({ success: true, message: 'Transport deleted successfully' })
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }

@@ -35,9 +35,16 @@ function readCompanyIdFromAuth(request: NextRequest): string | null {
 function getCompanyIdFromAuthenticatedRequest(request: NextRequest): string {
   const companyId = readCompanyIdFromAuth(request)
   if (!companyId) {
-    throw new Error('No company assigned to this user')
+    throw new Error('Company scope is required for this request')
   }
   return companyId
+}
+
+function handleRouteError(error: unknown) {
+  if (error instanceof Error && error.message === 'Company scope is required for this request') {
+    return NextResponse.json({ error: error.message }, { status: 403 })
+  }
+  return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
 }
 
 function clean(value: unknown): string | null {
@@ -107,7 +114,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(banks)
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
 
@@ -198,7 +205,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Bank data stored successfully', bank: created })
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
 
@@ -289,7 +296,7 @@ export async function PUT(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Bank updated successfully', bank: updated })
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
 
@@ -370,6 +377,6 @@ export async function DELETE(request: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Bank deleted successfully' })
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error' }, { status: 500 })
+    return handleRouteError(error)
   }
 }
