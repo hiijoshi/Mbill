@@ -70,35 +70,34 @@ export default function ProductMasterPage() {
 
   const fetchUnits = useCallback(async (activeCompanyId: string) => {
     try {
-      const response = await fetch(`/api/units?companyId=${encodeURIComponent(activeCompanyId)}`)
+      // Omit ?companyId so scope matches the httpOnly company cookie. Passing a different id than the
+      // cookie triggers middleware "Company mismatch" and breaks this call even though GET is valid.
+      const response = await fetch('/api/units', { cache: 'no-store', credentials: 'include' })
 
       if (response.ok) {
         const data = await response.json().catch(() => ({}))
         const rows = Array.isArray(data?.units) ? data.units : Array.isArray(data) ? data : []
-        const resolvedCompanyId = typeof data?.companyId === 'string' ? data.companyId : ''
+        const resolvedCompanyId = typeof data?.companyId === 'string' ? data.companyId.trim() : ''
 
         setUnits(rows)
-        setCompanyId(activeCompanyId)
-
         if (resolvedCompanyId) {
           setCompanyId((prev) => prev || resolvedCompanyId)
+        } else if (activeCompanyId) {
+          setCompanyId((prev) => prev || activeCompanyId)
         }
         setErrorMessage('')
       } else {
-        const payload = await response.json().catch(() => ({}))
-        // Keep Product Master usable even if units API is temporarily unavailable.
+        const payload = await response.json().catch(() => ({} as { error?: string }))
         setUnits(FALLBACK_UNITS)
-        const apiError =
-          typeof payload?.error === 'string' && payload.error.trim()
-            ? payload.error.trim()
-            : ''
-        setErrorMessage(apiError || 'Units service is temporarily unavailable. Using default units (KG/QT).')
+        setErrorMessage('')
+        if (typeof payload?.error === 'string' && payload.error.trim()) {
+          console.warn('Product Master: /api/units failed', response.status, payload.error.trim())
+        }
       }
     } catch (error) {
       console.error('Error fetching units:', error)
-      // Network/runtime fallback to avoid blocking Product Master.
       setUnits(FALLBACK_UNITS)
-      setErrorMessage('Units service is temporarily unavailable. Using default units (KG/QT).')
+      setErrorMessage('')
     }
   }, [])
 
