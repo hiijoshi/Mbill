@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -44,6 +45,7 @@ const FALLBACK_UNITS: Unit[] = [
 ]
 
 export default function ProductMasterPage() {
+  const router = useRouter()
   const [companyId, setCompanyId] = useState('')
   const [products, setProducts] = useState<Product[]>([])
   const [units, setUnits] = useState<Unit[]>([])
@@ -159,15 +161,15 @@ export default function ProductMasterPage() {
   const ensureCompanyContext = useCallback(async () => {
     const activeCompanyId = companyId || await resolveActiveCompanyId(window.location.search)
     if (!activeCompanyId) {
-      setErrorMessage('Company not selected. Please select company once.')
       setProducts([])
       setUnits([])
       setLoading(false)
+      router.replace('/company/select')
       return null
     }
     setCompanyId(activeCompanyId)
     return activeCompanyId
-  }, [companyId])
+  }, [companyId, router])
 
   useEffect(() => {
     ;(async () => {
@@ -188,7 +190,7 @@ export default function ProductMasterPage() {
     try {
       const activeCompanyId = await ensureCompanyContext()
       if (!activeCompanyId) {
-        alert('Company not selected. Please select company once.')
+        router.replace('/company/select')
         return
       }
 

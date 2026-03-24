@@ -1,4 +1,5 @@
 import { getClientCache, setClientCache } from './client-fetch-cache'
+import { authHeadersScoped } from './csrf'
 import { getCompanyCookieNameCandidates } from './session-cookies'
 
 export const APP_COMPANY_CHANGED_EVENT = 'app-company-changed'
@@ -11,6 +12,7 @@ const AUTH_ME_CACHE_AGE_MS = 30_000
 type AuthMeCachePayload = {
   user?: {
     companyId?: string | null
+    assignedCompanyId?: string | null
   } | null
   company?: {
     id?: string | null
@@ -68,6 +70,53 @@ export function getCompanyIdFromSearch(search: string): string {
   return getCompanyIdFromCookie()
 }
 
+async function tryResolveCompanyFromCompaniesList(): Promise<string> {
+  if (typeof document === 'undefined') return ''
+
+  const timeoutMs = Math.max(5000, Math.min(60000, Number(process.env.NEXT_PUBLIC_API_TIMEOUT_MS || 12000)))
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort('RequestTimeout'), timeoutMs)
+
+  try {
+    const res = await fetch('/api/companies', {
+      cache: 'no-store',
+      credentials: 'include',
+      signal: controller.signal
+    })
+    if (!res.ok) return ''
+
+    const rows = (await res.json().catch(() => null)) as unknown
+    if (!Array.isArray(rows) || rows.length === 0) {
+      return ''
+    }
+
+    type Row = { id?: unknown; locked?: boolean }
+    const list = rows as Row[]
+    const unlocked = list.filter((c) => !c?.locked)
+    const pick = (unlocked[0] || list[0]) as Row
+    const id = typeof pick?.id === 'string' ? pick.id.trim() : ''
+    if (!id) return ''
+
+    const setRes = await fetch('/api/auth/company', {
+      method: 'POST',
+      headers: authHeadersScoped('app'),
+      credentials: 'include',
+      body: JSON.stringify({ companyId: id, force: true })
+    })
+
+    if (setRes.ok) {
+      setClientCache(ACTIVE_COMPANY_CACHE_KEY, id)
+      notifyAppCompanyChanged(id)
+    }
+
+    return id
+  } catch {
+    return ''
+  } finally {
+    clearTimeout(timeoutId)
+  }
+}
+
 export async function resolveCompanyId(search: string): Promise<string> {
   const fromSearch = getCompanyIdFromSearch(search)
   if (fromSearch) return fromSearch
@@ -79,7 +128,12 @@ export async function resolveCompanyId(search: string): Promise<string> {
     }
 
     const cachedAuthMe = getClientCache<AuthMeCachePayload>(AUTH_ME_CACHE_KEY, AUTH_ME_CACHE_AGE_MS)
-    const cachedAuthCompanyId = String(cachedAuthMe?.company?.id || cachedAuthMe?.user?.companyId || '').trim()
+    const cachedAuthCompanyId = String(
+      cachedAuthMe?.company?.id ||
+        cachedAuthMe?.user?.companyId ||
+        cachedAuthMe?.user?.assignedCompanyId ||
+        ''
+    ).trim()
     if (cachedAuthCompanyId) {
       setClientCache(ACTIVE_COMPANY_CACHE_KEY, cachedAuthCompanyId)
       return cachedAuthCompanyId
@@ -102,15 +156,21 @@ export async function resolveCompanyId(search: string): Promise<string> {
 
     const data = await response.json()
     setClientCache(AUTH_ME_CACHE_KEY, data)
-    const resolvedCompanyId = (
+    const resolvedCompanyId = String(
       data?.user?.companyId ||
-      data?.company?.id ||
-      ''
-    )
-    if (typeof resolvedCompanyId === 'string' && resolvedCompanyId.trim()) {
-      setClientCache(ACTIVE_COMPANY_CACHE_KEY, resolvedCompanyId.trim())
+        data?.company?.id ||
+        data?.user?.assignedCompanyId ||
+        ''
+    ).trim()
+    if (resolvedCompanyId) {
+      setClientCache(ACTIVE_COMPANY_CACHE_KEY, resolvedCompanyId)
+      return resolvedCompanyId
     }
-    return resolvedCompanyId
+
+    const fromList = await tryResolveCompanyFromCompaniesList()
+    if (fromList) return fromList
+
+    return ''
   } catch {
     return ''
   }
