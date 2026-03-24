@@ -153,7 +153,7 @@ async function loadAuthGuardState(auth: RequestAuthContext): Promise<AuthGuardSt
     return cached.state
   }
 
-  const user = auth.userDbId
+  const byUserDbId = auth.userDbId
     ? await prisma.user.findFirst({
         where: { id: auth.userDbId },
         select: {
@@ -167,22 +167,28 @@ async function loadAuthGuardState(auth: RequestAuthContext): Promise<AuthGuardSt
           }
         }
       })
-    : await prisma.user.findFirst({
-        where: {
-          traderId: auth.traderId,
-          userId: auth.userId
-        },
-        select: {
-          locked: true,
-          deletedAt: true,
-          trader: {
-            select: {
-              locked: true,
-              deletedAt: true
-            }
+    : null
+
+  // Supabase JWT may carry legacy_user_id while the current auth context carries user_code.
+  // Fallback by (traderId, userId) prevents false "inactive" blocks when ID mapping drifts.
+  const user =
+    byUserDbId ||
+    await prisma.user.findFirst({
+      where: {
+        traderId: auth.traderId,
+        userId: auth.userId
+      },
+      select: {
+        locked: true,
+        deletedAt: true,
+        trader: {
+          select: {
+            locked: true,
+            deletedAt: true
           }
         }
-      })
+      }
+    })
 
   const state: AuthGuardState = user
     ? {

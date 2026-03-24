@@ -15,6 +15,8 @@ export type RequestAuthContext = {
 }
 
 export const AUTH_CONTEXT_HEADER = 'x-auth-context'
+const LEGACY_PERMISSION_CACHE_TTL_MS = 30_000
+const legacyPermissionBootstrapCache = new Map<string, { value: boolean; expiresAt: number }>()
 
 const ROLE_ALIASES: Record<string, AppRole> = {
   super_admin: 'super_admin',
@@ -32,6 +34,31 @@ export function normalizeAppRole(role?: string | null): AppRole {
   if (!role) return 'company_user'
   const normalized = role.toLowerCase().replace(/\s+/g, '_')
   return ROLE_ALIASES[normalized] || 'company_user'
+}
+
+async function isLegacyPermissionBootstrapUser(auth: RequestAuthContext): Promise<boolean> {
+  if (!auth.userDbId) return false
+  if (auth.role === 'super_admin' || auth.role === 'trader_admin') return false
+
+  const cacheKey = `${auth.userDbId}:${auth.traderId}`
+  const now = Date.now()
+  const cached = legacyPermissionBootstrapCache.get(cacheKey)
+  if (cached && cached.expiresAt > now) {
+    return cached.value
+  }
+
+  const count = await prisma.userPermission.count({
+    where: {
+      userId: auth.userDbId
+    }
+  })
+
+  const isBootstrap = count === 0
+  legacyPermissionBootstrapCache.set(cacheKey, {
+    value: isBootstrap,
+    expiresAt: now + LEGACY_PERMISSION_CACHE_TTL_MS
+  })
+  return isBootstrap
 }
 
 function normalizeNullableHeaderValue(value: string | null | undefined): string | null {
@@ -208,6 +235,12 @@ async function hasModulePermission(
   })
 
   if (!permission) {
+    // Backward compatibility: legacy users may not have UserPermission rows yet.
+    // If no permission rows exist for the user at all, allow until permissions are seeded.
+    const isBootstrapUser = await isLegacyPermissionBootstrapUser(auth)
+    if (isBootstrapUser) {
+      return true
+    }
     return false
   }
 
@@ -235,6 +268,11 @@ export async function filterCompanyIdsByRoutePermission(
 
   if (!auth.userDbId) {
     return []
+  }
+
+  const isBootstrapUser = await isLegacyPermissionBootstrapUser(auth)
+  if (isBootstrapUser) {
+    return companyIds
   }
 
   const rows = await prisma.userPermission.findMany({
