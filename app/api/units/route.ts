@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { UNIVERSAL_UNITS, toNumber } from '@/lib/unit-conversion'
-import { ensureCompanyAccess, normalizeId, requireAuthContext, requireRoles } from '@/lib/api-security'
+import { ensureCompanyAccess, forbidden, hasCompanyAccess, normalizeId, requireAuthContext, requireRoles } from '@/lib/api-security'
 
 function setCORSHeaders() {
   const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || ['http://localhost:3000']
@@ -109,9 +109,14 @@ async function ensureWriteAccess(request: NextRequest, companyId: string) {
 }
 
 async function ensureReadAccess(request: NextRequest, companyId: string) {
-  const scopeGuard = await ensureCompanyAccess(request, companyId)
-  if (scopeGuard) {
-    return scopeGuard
+  const authResult = requireAuthContext(request)
+  if (!authResult.ok) {
+    return authResult.response
+  }
+
+  const allowed = await hasCompanyAccess(companyId, authResult.auth)
+  if (!allowed) {
+    return forbidden('Company access denied')
   }
 
   return null
